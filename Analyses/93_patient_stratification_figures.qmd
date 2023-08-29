@@ -1,17 +1,17 @@
 ---
-title: tumor cluster fractions
-jupyter:
-  jupytext:
-    text_representation:
-      extension: .qmd
-      format_name: quarto
-      format_version: '1.0'
-      jupytext_version: 1.15.1
-  kernelspec:
-    display_name: 'Python [conda env:.conda-pircher-sc-integrate2]'
-    language: python
-    name: conda-env-.conda-pircher-sc-integrate2-py
+title: Figure 1 
 ---
+
+```{python}
+import anndata
+import altair as alt
+```
+
+
+```{python}
+adata = anndata.read_h5ad("/home/sturm/projects/2023/neutrophil-review/Data/extended-atlas-cellxgene.h5ad", backed='r')
+
+```
 
 ```{python}
 %load_ext autoreload
