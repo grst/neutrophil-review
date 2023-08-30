@@ -5,13 +5,62 @@ title: Figure 1
 ```{python}
 import anndata
 import altair as alt
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+import numpy as np
+import scanpy as sc
+import decoupler as dc
+
+plt.rcParams['pdf.use14corefonts'] = False # don't convert text to path
 ```
 
 
 ```{python}
-adata = anndata.read_h5ad("/home/sturm/projects/2023/neutrophil-review/Data/extended-atlas-cellxgene.h5ad", backed='r')
-
+adata = anndata.read_h5ad("../Data/luca-extended-cellxgene.h5ad")
+genes_of_interest = pd.read_excel("../Metadata/gene_list.xlsx")
 ```
+
+
+```{python}
+obs_primary_tumor = adata.obs.loc[lambda x: x["disease"].isin(["lung adenocarcinoma", "squamous cell lung carcinoma", "non-small cell lung carcinoma"]) & (x["cell_type"] == "malignant cell") & (x["origin"] == "tumor_primary")]
+
+selected_patients = obs_primary_tumor.groupby("donor_id").size().reset_index(name="n_cells").loc[lambda x: x["n_cells"] > 50]["donor_id"].values
+obs_selected_patients = obs_primary_tumor[lambda x: x["donor_id"].isin(selected_patients)]
+adata_selected_patients = adata[obs_selected_patients.index, :]
+```
+
+```{python}
+tumor_cell_count = obs_primary_tumor.loc[lambda x: x["donor_id"].isin(selected_patients)].groupby(["donor_id", "cell_type_tumor", "disease"], observed=True).size().reset_index(name="n_cells").assign(donor_id = lambda x: x["donor_id"].astype(str))
+```
+
+
+```{python}
+WIDTH=800
+order = tumor_cell_count.groupby("donor_id").apply(lambda x: x.assign(frac=x["n_cells"]/np.sum(x["n_cells"]))).loc[lambda x: x["cell_type_tumor"] == "Tumor cells LUSC"].sort_values("frac", ascending=False)["donor_id"].tolist()
+
+ch_frac = alt.Chart(tumor_cell_count).mark_bar().encode(
+    x=alt.X("donor_id:N", sort=order, axis=alt.Axis(labels=False, ticks=False, title=None)),
+    y=alt.Y("n_cells").stack("normalize"),
+    color=alt.Color("cell_type_tumor")
+).properties(width=WIDTH, height=200)
+
+ch_type = alt.Chart(tumor_cell_count.assign(ylab="tumor type (histopathological)")).mark_rect().encode(
+    x=alt.X("donor_id:N", sort=order, axis=alt.Axis(labels=False, ticks=False, title=None)),
+    y=alt.Y("ylab", axis=alt.Axis(title=None)),
+    color=alt.Color("disease")
+).properties(width=WIDTH)
+
+alt.vconcat(ch_type, ch_frac).resolve_scale(color="independent")
+```
+
+```{python}
+tmp_pb = dc.get_pseudobulk(adata_selected_patients, )
+tmp_ad.obs["donor_id"] = pd.Categorical(tmp_ad.obs["donor_id"].astype(str), categories = order)
+sc.pl.matrixplot(tmp_ad, var_names=genes_of_interest["gene_symbol"], gene_symbols="feature_name", groupby="donor_id", use_raw=False, swap_axes=True, cmap="bwr")
+```
+
+---
 
 ```{python}
 %load_ext autoreload
@@ -81,29 +130,7 @@ plot_df = plot_df.assign(tumor_type_transcriptomic = lambda x: x["tumor_type_inf
 ```
 
 ```{python}
-def get_row(col, color_scale=None, title=None, legend_title=None):
-    title = col if title is None else title
-    legend_title = title if legend_title is None else legend_title
-    if color_scale is None:
-        color_scale = col
-    return (
-        alt.Chart(plot_df.assign(ylab=title))
-        .mark_rect()
-        .encode(
-            x=alt.X(
-                "patient:N",
-                axis=alt.Axis(labels=False, ticks=False, title=None),
-                sort=plot_df["patient"].values,
-            ),
-            y=alt.Y("ylab", axis=alt.Axis(title=None)),
-            color=alt.Color(
-                col,
-                scale=sh.colors.altair_scale(color_scale, data=plot_df, data_col=col),
-                legend=alt.Legend(columns=3, title=legend_title),
-            ),
-        )
-        .properties(width=800)
-    )
+
 
 
 p0 = (
