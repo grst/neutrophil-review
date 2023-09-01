@@ -1,8 +1,10 @@
 ---
-title: Figure 1 
+title: Figure 1
+jupyter: python3
 ---
 
 ```{python}
+# | vscode: {languageId: python}
 import anndata
 import altair as alt
 import matplotlib.pyplot as plt
@@ -29,17 +31,28 @@ def altair_scale_mpl(scheme, **kwargs):
         range=[to_hex(x) for x in cm.get_cmap(scheme, 1000)(range(1000))], **kwargs
     )
 
+def altair_scale(color_mapping, **kwargs):
+    """
+    Discrete color scale for altair based on our color definitions.
+    """
+    return alt.Scale(
+        domain=list(color_mapping.keys()),
+        range=list(color_mapping.values()),
+        **kwargs,
+    )
+
+alt.data_transformers.disable_max_rows()
 
 ```
 
-
 ```{python}
+# | vscode: {languageId: python}
 adata = anndata.read_h5ad("../Data/luca-extended-cellxgene.h5ad")
 genes_of_interest = pd.read_excel("../Metadata/gene_list.xlsx")
 ```
 
-
 ```{python}
+# | vscode: {languageId: python}
 # some patients from the Leader_Merad study are measured in multiple datasets. Let's exclude them from one of the datasets
 EXCLUDE_DUPLICATE_SAMPLES = [
     {
@@ -106,22 +119,53 @@ assert not len(duplicate_patients)
 ```
 
 ```{python}
+# | vscode: {languageId: python}
 tumor_cell_count = (
     obs_primary_tumor.loc[lambda x: x["donor_id"].isin(selected_patients)]
     .groupby(["donor_id", "cell_type_tumor", "disease"], observed=True)
     .size()
     .reset_index(name="n_cells")
     .assign(donor_id=lambda x: x["donor_id"].astype(str))
+    .assign(disease=lambda x: x["disease"].map({
+        "lung adenocarcinoma": "LUAD",
+        "squamous cell lung carcinoma": "LUSC",
+        "non-small cell lung carcinoma": "NSCLC NOS"
+    }))
+    .assign(cell_type_tumor=lambda x: x["cell_type_tumor"].map({
+        "Tumor cells LUAD": "LUAD",
+        "Tumor cells LUAD EMT": "LUAD",
+        "Tumor cells LUAD MSLN": "LUAD",
+        "Tumor cells LUAD NE": "LUAD",
+        "Tumor cells LUAD mitotic": "LUAD",
+        "Tumor cells LUSC": "LUSC",
+        "Tumor cells LUSC mitotic": "LUSC",
+        "Tumor cells NSCLC mixed": "NSCLC mixed"
+    }))
 )
 ```
 
+```{python}
+COLORS = {
+    "disease": {
+        "LUAD": "#1b9e77",
+        "LUSC": "#7570b3",
+        "NSCLC NOS": "#b3b3b3"
+    },
+    "cell_type_tumor": {
+        "LUAD": "#1b9e77",
+        "LUSC": "#7570b3",
+        "NSCLC mixed": "#b3b3b3"
+    }
+}
+```
 
 ```{python}
+# | vscode: {languageId: python}
 WIDTH = 800
 order = (
     tumor_cell_count.groupby("donor_id")
     .apply(lambda x: x.assign(frac=x["n_cells"] / np.sum(x["n_cells"])))
-    .loc[lambda x: x["cell_type_tumor"] == "Tumor cells LUSC"]
+    .loc[lambda x: x["cell_type_tumor"] == "LUSC"]
     .sort_values("frac", ascending=False)["donor_id"]
     .tolist()
 )
@@ -136,7 +180,7 @@ ch_frac = (
             axis=alt.Axis(labels=False, ticks=False, title=None),
         ),
         y=alt.Y("n_cells").stack("normalize"),
-        color=alt.Color("cell_type_tumor"),
+        color=alt.Color("cell_type_tumor", scale=altair_scale(COLORS["cell_type_tumor"])),
     )
     .properties(width=WIDTH, height=200)
 )
@@ -151,7 +195,7 @@ ch_type = (
             axis=alt.Axis(labels=False, ticks=False, title=None),
         ),
         y=alt.Y("ylab", axis=alt.Axis(title=None)),
-        color=alt.Color("disease"),
+        color=alt.Color("disease", scale=altair_scale(COLORS["disease"])),
     )
     .properties(width=WIDTH)
 )
@@ -160,6 +204,7 @@ alt.vconcat(ch_type, ch_frac).resolve_scale(color="independent")
 ```
 
 ```{python}
+# | vscode: {languageId: python}
 tmp_pb = dc.get_pseudobulk(adata_selected_patients, "donor_id", None, use_raw=True)
 assert tmp_pb.shape[0] == len(selected_patients)
 sc.pp.normalize_total(tmp_pb, target_sum=1e6)
@@ -177,16 +222,13 @@ expr_df = (
 ```
 
 ```{python}
-
-```
-
-```{python}
+# | vscode: {languageId: python}
 charts = []
 for group in expr_df["group"].unique():
     genes = expr_df["gene_symbol"].unique()
     genes_order = genes[
         leaves_list(
-            linkage(tmp_pb[:, genes].X.T, method="average", metric="correlation")
+            linkage(tmp_pb[:, genes].X.T, method="complete", metric="correlation")
         )
     ].tolist()
     tmp_df = expr_df.loc[lambda x: x["group"] == group]
@@ -211,6 +253,6 @@ for group in expr_df["group"].unique():
 ch = alt.vconcat(ch_type, ch_frac, alt.vconcat(*charts)).resolve_scale(
     color="independent"
 )
-ch.save("../Results/fig1.svg")
 ch
 ```
+
